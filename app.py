@@ -4,6 +4,12 @@ from food_delivery import Customer, DeliveryPartner, Restaurant, MenuItem
 st.set_page_config(page_title="Food Delivery", page_icon="🍔")
 st.title("Food Delivery")
 
+
+def bill_for(items):
+    subtotal = sum(i.price for i in items)
+    return subtotal + subtotal * 0.05 + 20
+
+
 # ---------- State ----------
 if "restaurant" not in st.session_state:
     r = Restaurant("Spice Garden", "Aurangabad")
@@ -56,24 +62,24 @@ st.header("4. Place an order")
 menu = {i.name: i for i in rest.get_menu()}
 chosen = st.multiselect("Choose items", list(menu))
 if chosen:
-    from food_delivery import Order
-    total = Order([menu[n] for n in chosen]).calculate_bill()  # preview only
-    st.write(f"Bill (incl. 5% GST and ₹20 packaging): **₹{total:.2f}**")
+    st.write(f"Bill (incl. 5% GST and ₹20 packaging): **₹{bill_for([menu[n] for n in chosen]):.2f}**")
+
 if st.button("Place order"):
     if not chosen:
         st.error("Select at least one item.")
     else:
         items = [menu[n] for n in chosen]
-        bill = sum(i.price for i in items) * 1.05 + 20
-        if not c.deduct_from_wallet(bill):
-            st.error(f"Wallet balance too low. Need ₹{bill:.2f}.")
+        bill = bill_for(items)
+        if c._wallet_balance < bill:
+            st.error(f"Wallet balance too low. Need ₹{bill:.2f}, have ₹{c._wallet_balance:.2f}.")
         else:
+            c._wallet_balance -= bill
             ss.order = c.place_order(rest, items)
-            st.success(f"Order #{ss.order._order_id} placed.")
+            st.success(f"Order {ss.order._order_id} placed.")
 
 order = ss.order
 if order:
-    st.info(f"Order #{order._order_id} · Status: **{order._status}** · "
+    st.info(f"Order {order._order_id} · Status: **{order._status}** · "
             f"ETA {order.estimated_time()} min · Your OTP: **{order._otp}**")
 
 # ---------- 5. Delivery partner ----------
@@ -104,7 +110,7 @@ if st.button("Accept order"):
         st.warning("Partner is busy.")
     else:
         p.accept_order(order)
-        st.success(f"{p._name} accepted order #{order._order_id}.")
+        st.success(f"{p._name} accepted order {order._order_id}.")
 
 # ---------- 7. OTP and delivery ----------
 st.header("7. Enter OTP and complete delivery")
@@ -112,12 +118,14 @@ otp_text = st.text_input("Customer OTP", max_chars=4)
 if st.button("Complete delivery"):
     if not (order and p):
         st.error("Place an order and create a delivery partner first.")
-    elif order._status != "Order Accepted":
+    elif order._status != "Accepted":
         st.warning("Accept the order first.")
     elif not otp_text.isdigit():
         st.error("OTP must be 4 digits.")
-    elif p.deliver(order, int(otp_text)):
-        st.success("Order delivered. Partner is available again.")
-        st.balloons()
     else:
-        st.error("Wrong OTP. Try again.")
+        p.deliver(order, int(otp_text))
+        if order._status == "Delivered":
+            st.success("Order delivered. Partner is available again.")
+            st.balloons()
+        else:
+            st.error("Wrong OTP. Try again.")
